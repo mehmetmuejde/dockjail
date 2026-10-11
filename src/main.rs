@@ -27,7 +27,7 @@ enum Command {
     Check,
     /// Lock the Dock to a display, immediately and at every login
     On {
-        /// Index from `dockjail displays`; default: the display the Dock is on now
+        /// Index from `dockjail displays`; default: the display this terminal window is on
         index: Option<usize>,
     },
     /// Unlock the Dock and stop locking at login
@@ -72,23 +72,22 @@ fn require_permission() -> Result<(), String> {
     if permission::is_trusted() {
         return Ok(());
     }
-    Err(format!("accessibility permission missing. Run `dockjail check` first.\n{}", permission::HINT))
+    Err(format!("accessibility permission missing. Run `dockjail check` first.\n{}", permission::terminal_hint()))
 }
 
 fn check() -> Result<(), String> {
     if !permission::request() {
-        return Err(format!(
-            "accessibility permission missing.\n{}\nThen run `dockjail check` again.",
-            permission::HINT
-        ));
+        return Err(format!("accessibility permission missing.\n{}", permission::terminal_hint()));
     }
-    println!("accessibility permission granted to the program that started this command (your terminal)");
-    println!("the login agent is a separate program: `dockjail on` checks it and tells you if it needs its own entry");
+    println!("accessibility permission granted to {}", permission::terminal_name());
+    println!("next: `dockjail on` locks the Dock. The login agent it starts is a separate program and asks for");
+    println!("its own permission; `dockjail on` tells you if it is missing.");
     Ok(())
 }
 
 fn displays() -> Result<(), String> {
     let dock = dock::current_display();
+    let default = default_display();
 
     println!("{:<6} {:<38} {:<22} TYPE", "INDEX", "UUID", "FRAME");
     for (index, d) in display::list().iter().enumerate() {
@@ -99,6 +98,9 @@ fn displays() -> Result<(), String> {
         if dock == Some(d.id) {
             kind.push("dock");
         }
+        if default == Some(d.id) {
+            kind.push("default");
+        }
         let (origin, size) = (d.frame.origin, d.frame.size);
         let frame = format!("{},{} {}x{}", origin.x, origin.y, size.width, size.height);
         println!("{:<6} {:<38} {:<22} {}", index, d.uuid, frame, kind.join(", "));
@@ -108,13 +110,14 @@ fn displays() -> Result<(), String> {
 
 fn on(index: Option<usize>) -> Result<(), String> {
     require_permission()?;
-    let uuid = match index {
+    let target = match index {
         Some(index) => display::list()
             .get(index)
-            .map(|d| d.uuid.clone())
+            .map(|d| d.id)
             .ok_or_else(|| format!("no display with index {index}, see `dockjail displays`"))?,
-        None => display::uuid_of(dock::current_display().ok_or("cannot determine the display the Dock is on")?),
+        None => default_display().ok_or("cannot determine a display, pick one with `dockjail on INDEX`")?,
     };
+    let uuid = display::uuid_of(target);
 
     let path = launch_agent::install(std::slice::from_ref(&uuid))?;
     println!("installed {}", path.display());
@@ -123,12 +126,24 @@ fn on(index: Option<usize>) -> Result<(), String> {
     std::thread::sleep(AGENT_START_WAIT);
     if !launch_agent::is_running() {
         permission::open_settings();
-        return Err("the login agent is not running yet. It needs its own Accessibility permission: enable \
-             `dockjail` in the System Settings page that just opened. The agent retries every 30 seconds."
-            .to_string());
+        return Err(format!(
+            "the login agent is not running yet (System Settings just opened).\n{}",
+            permission::agent_hint()
+        ));
     }
     println!("Dock locked to display {uuid}");
+    // dockjail never moves the Dock itself, it only keeps it from leaving.
+    if dock::current_display().is_some_and(|dock| dock != target) {
+        println!(
+            "the Dock is still on another display: push the cursor against the bottom edge of this one to move it here"
+        );
+    }
     Ok(())
+}
+
+/// The display `on` locks to without an index: the one the command was typed on.
+fn default_display() -> Option<u32> {
+    display::of_front_window().or_else(display::under_cursor).or_else(dock::current_display)
 }
 
 fn off() -> Result<(), String> {
@@ -154,7 +169,11 @@ fn log(lines: usize) -> Result<(), String> {
 }
 
 fn run(display: String) -> Result<(), String> {
-    require_permission()?;
+    // Started by launchd, dockjail is its own responsible process: asking (not just checking) is what
+    // adds it to the Accessibility list, so the user has an entry to enable.
+    if !permission::request() {
+        return Err(format!("accessibility permission missing.\n{}", permission::agent_hint()));
+    }
     logging::log!("locking the Dock to display {display}");
     tap::run(display)
 }

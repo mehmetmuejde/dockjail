@@ -15,12 +15,16 @@ class Dockjail < Formula
 
   def caveats
     <<~EOS
-      Lock the Dock to the display it is on:  dockjail on
+      Lock the Dock to this window's display: dockjail on
       List displays and choose one:           dockjail displays / dockjail on INDEX
       Unlock:                                 dockjail off
 
-      dockjail needs the Accessibility permission. Add #{opt_bin}/dockjail
-      in System Settings → Privacy & Security → Accessibility.
+      dockjail needs the Accessibility permission (System Settings → Privacy &
+      Security → Accessibility), twice:
+        1. For your terminal app (Terminal, iTerm, Warp, ...): run `dockjail check`,
+           enable the app, then quit and reopen it.
+        2. For the login agent: `dockjail on` starts it, and it adds `dockjail`
+           to the list. Enable that entry.
       After an upgrade macOS asks for it again.
     EOS
   end

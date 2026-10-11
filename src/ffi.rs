@@ -10,6 +10,7 @@ use core_foundation_sys::dictionary::CFDictionaryRef;
 use core_foundation_sys::mach_port::CFMachPortRef;
 use core_foundation_sys::string::CFStringRef;
 use core_foundation_sys::uuid::CFUUIDRef;
+use core_graphics::geometry::CGRect;
 
 // --- Accessibility (ApplicationServices) ---
 
@@ -40,6 +41,7 @@ unsafe extern "C" {
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
     pub fn CGEventTapEnable(tap: CFMachPortRef, enable: bool);
+    pub fn CGRectMakeWithDictionaryRepresentation(dict: CFDictionaryRef, rect: *mut CGRect) -> bool;
 }
 
 #[link(name = "ColorSync", kind = "framework")]

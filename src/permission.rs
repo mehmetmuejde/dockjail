@@ -29,6 +29,45 @@ pub fn request() -> bool {
     }
 }
 
-pub const HINT: &str = "Grant access in System Settings → Privacy & Security → Accessibility.\n\
-    When started from a terminal, the terminal app needs the permission; \
-    as a LaunchAgent, the dockjail binary itself needs it.";
+/// Name of the terminal app this command runs in, from `TERM_PROGRAM`. macOS gives the Accessibility
+/// permission of a command started from a terminal to that app, not to dockjail.
+pub fn terminal_name() -> String {
+    let name = match std::env::var("TERM_PROGRAM").as_deref() {
+        Ok("Apple_Terminal") => "Terminal",
+        Ok("iTerm.app") => "iTerm",
+        Ok("WarpTerminal") => "Warp",
+        Ok("ghostty") => "Ghostty",
+        Ok("WezTerm") => "WezTerm",
+        Ok("vscode") => "your editor (VS Code or a fork of it)",
+        _ => "your terminal app",
+    };
+    name.to_string()
+}
+
+/// Steps for granting the permission to the terminal app.
+pub fn terminal_hint() -> String {
+    let terminal = terminal_name();
+    format!(
+        "This command runs in {terminal}, so {terminal} needs the permission, not dockjail:\n  \
+         1. Enable {terminal} in System Settings → Privacy & Security → Accessibility.\n     \
+         If it is not listed, add it with \"+\" from /Applications.\n  \
+         2. Quit {terminal} completely (Cmd+Q) and open it again; macOS applies the permission after a restart.\n  \
+         3. Run `dockjail check` again."
+    )
+}
+
+/// Steps for granting the permission to the login agent, which runs the dockjail binary itself.
+pub fn agent_hint() -> String {
+    // The real file, not the path it was started by: Homebrew's bin/dockjail is only a symlink.
+    let binary = std::env::current_exe()
+        .and_then(std::fs::canonicalize)
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "the dockjail binary".to_string());
+    format!(
+        "The login agent runs without a terminal, so it needs its own entry, separate from {}:\n  \
+         1. Enable `dockjail` in System Settings → Privacy & Security → Accessibility.\n     \
+         If it is not listed, click \"+\", press Cmd+Shift+G and enter {binary}\n  \
+         2. The agent retries every 30 seconds. `dockjail log` shows whether it started.",
+        terminal_name()
+    )
+}
